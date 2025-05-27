@@ -1,0 +1,69 @@
+pipeline {
+    agent any
+
+    tools {
+        // Define tu Maven instalado en Jenkins con este nombre
+        maven 'MAVEN_HOME'
+    }
+
+    environment {
+        SONARQUBE = 'SonarQubeServer' // Cambia al nombre configurado en Jenkins
+        SONAR_TOKEN = credentials('sonar-token-id') // Define en Jenkins el token de SonarQube como credencial
+        DOCKER_IMAGE = 'micro/product:1.0.0'
+    }
+
+    stages {
+        stage('Clone') {
+            steps {
+                git 'https://github.com/Leoncio-Sanchez/examen2.git'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                // Construir sin tests para acelerar el build principal
+                sh 'mvn -DskipTests clean package -f micro-product/pom.xml'
+            }
+        }
+
+        stage('Test') {
+            steps {
+                // Ejecutar tests para asegurarse que todo está OK
+                sh 'mvn test -f micro-product/pom.xml'
+            }
+            post {
+                always {
+                    junit 'micro-product/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONARQUBE}") {
+                    sh "mvn sonar:sonar -Dsonar.login=${SONAR_TOKEN} -Dsonar.host.url=http://sonarqube:9000 -f micro-product/pom.xml"
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t ${DOCKER_IMAGE} -f docker/Dockerfile ..'
+            }
+        }
+
+        stage('Deploy with Docker Compose') {
+            steps {
+                sh 'docker-compose -f docker/docker-compose.yml up -d'
+            }
+        }
+    }
+}
