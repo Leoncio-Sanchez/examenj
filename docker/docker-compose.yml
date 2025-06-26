@@ -11,6 +11,8 @@ services:
       - "8086:8080"
     networks:
       - backend
+
 networks:
   backend:
     name: micro_product_net
+    driver: bridge
